@@ -5,7 +5,9 @@ Dynamic Retriever fromulated in MO-IKE
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertModel, BertTokenizer as tokenizer
+from transformers import BertModel, BertTokenizer
+from utils.icl_utils import construct_icl_examples
+import json
 
 # -----------------------------
 # Define the Retriever Model
@@ -21,6 +23,8 @@ class Retriever(nn.Module):
         self.cand_actor = nn.Linear(H, H)
         self.stop_embedding = nn.Parameter(torch.randn(H))
         self.stop_bias = nn.Parameter(torch.tensor(-10.0))
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
 
     def retrieve_facts_list(self, query, facts):
         """
@@ -81,10 +85,38 @@ class Retriever(nn.Module):
             text = [text]
 
         device = self.stop_embedding.device
-        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(device)
+        inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(device)
 
         with torch.no_grad():
             outputs = self.bert(**inputs)
 
         return outputs.last_hidden_state[:, 0, :]
+
+def sample_retrieved_examples(query, icl_examples, max_candidates):
+    """
+    Sample retrieved examples based on current policy
+    """
+    max_candidates = max_candidates - 1
+
+    if max_candidates == 31:
+        query = query + "\n\n"
+
+    _, probs, pairs = retriever.retrieve_facts_list(query, icl_examples)
+    m = torch.distributions.Categorical(probs)
+
+    action_idx = m.sample()
+    candidates = list(pairs.keys()) # May sample STOP action
+    action = candidates[action_idx]
+    log_prob = m.log_prob(action_idx).detach()
+
+    if action == "STOP":
+        return [("STOP", log_prob)]
+
+    if max_candidates <= 0:
+        return [(action, log_prob)]
+
+    query = query + action
+    icl_examples.remove(action)
+
+    return [(action, log_prob)] + sample_retrieved_retains(query, icl_examples, max_candidates)
 
