@@ -92,7 +92,7 @@ class Retriever(nn.Module):
 
         return outputs.last_hidden_state[:, 0, :]
 
-def sample_retrieved_examples(query, icl_examples, max_candidates):
+def sample_retrieved_examples(retriever, query, icl_examples, max_candidates):
     """
     Sample retrieved examples based on current policy
     """
@@ -118,5 +118,5 @@ def sample_retrieved_examples(query, icl_examples, max_candidates):
     query = query + action
     icl_examples.remove(action)
 
-    return [(action, log_prob)] + sample_retrieved_retains(query, icl_examples, max_candidates)
+    return [(action, log_prob)] + sample_retrieved_examples(retriever, query, icl_examples, max_candidates)
 
